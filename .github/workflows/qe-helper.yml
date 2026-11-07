@@ -1,0 +1,150 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  QE Helper — el formulario de este workflow reemplaza a la UI Swing.
+#  Actions → "QE Helper" → Run workflow
+#
+#  Credenciales: en esta simulación salen de GitHub Secrets (environment = target).
+#  En la corporación se reemplaza SOLO el bloque "Obtener secretos" por HashiCorp
+#  Vault (ver bloque comentado); la app Java no cambia: lee variables de entorno.
+# ─────────────────────────────────────────────────────────────────────────────
+name: QE Helper
+
+run-name: "QE ${{ inputs.operation }} · ${{ inputs.issue_key }} · ${{ inputs.target }}${{ inputs.dry_run && ' (dry-run)' || '' }} · @${{ github.actor }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Actividad de QA"
+        type: choice
+        options: [create-subtasks, create-test-plan, create-defect]
+        default: create-subtasks
+      target:
+        description: "Destino: mock (simulación local en el runner) o jira-cloud (instancia real)"
+        type: choice
+        options: [mock, jira-cloud]
+        default: mock
+      issue_key:
+        description: "Issue padre / historia relacionada (ej. QA-100)"
+        type: string
+        required: true
+      subtasks:
+        description: "[create-subtasks] ALL o códigos: ANALISIS,DISENO,DATOS,FUNCIONAL,API,REGRESION,AUTOMATIZACION,PERFORMANCE,EVIDENCIAS"
+        type: string
+        default: "ALL"
+      summary:
+        description: "[create-defect / create-test-plan] Título"
+        type: string
+      description:
+        description: "[create-defect / create-test-plan] Descripción (usa \\n para nueva línea)"
+        type: string
+      tests:
+        description: "[create-test-plan] Keys (QA-201,QA-202) o jql:<consulta>"
+        type: string
+      dry_run:
+        description: "Dry-run: lee de Jira pero no crea nada (muestra los payloads)"
+        type: boolean
+        default: false
+
+# Evita que dos ejecuciones simultáneas sobre el mismo issue dupliquen subtareas.
+concurrency:
+  group: qe-helper-${{ inputs.issue_key }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # id-token: write   # ← necesario para autenticarse en Vault con OIDC (JWT)
+
+jobs:
+  run:
+    name: ${{ inputs.operation }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Cada destino es un GitHub Environment con sus propios secrets.
+    # Para jira-cloud puedes exigir "Required reviewers" o restringir ramas.
+    environment: ${{ inputs.target }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build (fat jar)
+        run: mvn -B -ntp -q package -DskipTests
+
+      # ── Simulación de Jira/Xray Cloud ─────────────────────────────────────
+      # El mock valida las credenciales contra los mismos secrets: si el
+      # pipeline no los inyecta bien, la llamada falla con 401 como en Jira real.
+      - name: Levantar mock Jira/Xray
+        if: inputs.target == 'mock'
+        env:
+          MOCK_JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          MOCK_JIRA_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          MOCK_XRAY_CLIENT_ID: ${{ secrets.XRAY_CLIENT_ID }}
+          MOCK_XRAY_CLIENT_SECRET: ${{ secrets.XRAY_CLIENT_SECRET }}
+        run: |
+          nohup python3 mock/jira_xray_mock.py --port 8089 > mock.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8089/health && exit 0; sleep 0.5; done
+          cat mock.log; exit 1
+
+      # ── Obtener secretos ──────────────────────────────────────────────────
+      # SIMULACIÓN: GitHub Secrets → variables de entorno (ver step "Ejecutar").
+      #
+      # CORPORATIVO: descomentar, activar `id-token: write` arriba y quitar los
+      # `secrets.*` del step "Ejecutar". vault-action exporta las variables al env
+      # y las enmascara en los logs.
+      #
+      # - name: Obtener secretos desde HashiCorp Vault
+      #   uses: hashicorp/vault-action@v3
+      #   with:
+      #     url: ${{ vars.VAULT_ADDR }}
+      #     namespace: ${{ vars.VAULT_NAMESPACE }}
+      #     method: jwt
+      #     role: qe-helper
+      #     secrets: |
+      #       secret/data/qa/jira-svc email          | JIRA_EMAIL ;
+      #       secret/data/qa/jira-svc api_token      | JIRA_API_TOKEN ;
+      #       secret/data/qa/xray-svc client_id      | XRAY_CLIENT_ID ;
+      #       secret/data/qa/xray-svc client_secret  | XRAY_CLIENT_SECRET
+
+      - name: Ejecutar QE Helper
+        env:
+          # Destino
+          JIRA_BASE_URL: ${{ inputs.target == 'mock' && 'http://127.0.0.1:8089' || vars.JIRA_BASE_URL }}
+          XRAY_BASE_URL: ${{ inputs.target == 'mock' && 'http://127.0.0.1:8089' || vars.XRAY_BASE_URL || 'https://xray.cloud.getxray.app' }}
+          # Secretos (simulación: GitHub Secrets del environment)
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          XRAY_CLIENT_ID: ${{ secrets.XRAY_CLIENT_ID }}
+          XRAY_CLIENT_SECRET: ${{ secrets.XRAY_CLIENT_SECRET }}
+          # Nombres de issue types/links (dependen del idioma/config de tu Jira)
+          JIRA_SUBTASK_TYPE: ${{ vars.JIRA_SUBTASK_TYPE }}
+          JIRA_BUG_TYPE: ${{ vars.JIRA_BUG_TYPE }}
+          XRAY_TEST_PLAN_TYPE: ${{ vars.XRAY_TEST_PLAN_TYPE }}
+          JIRA_LINK_TYPE: ${{ vars.JIRA_LINK_TYPE }}
+          # Inputs del formulario: SIEMPRE vía env, nunca interpolados en el script
+          # (evita inyección de comandos con un summary malicioso).
+          QE_OPERATION: ${{ inputs.operation }}
+          QE_ISSUE_KEY: ${{ inputs.issue_key }}
+          QE_SUBTASKS: ${{ inputs.subtasks }}
+          QE_SUMMARY: ${{ inputs.summary }}
+          QE_DESCRIPTION: ${{ inputs.description }}
+          QE_TESTS: ${{ inputs.tests }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: java -jar target/qe-helper.jar
+
+      - name: Logs del mock
+        if: always() && inputs.target == 'mock'
+        run: cat mock.log || true
+
+      - name: Guardar reporte (auditoría)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qe-report-${{ github.run_id }}
+          path: qe-report.json
+          if-no-files-found: ignore
+          retention-days: 90
