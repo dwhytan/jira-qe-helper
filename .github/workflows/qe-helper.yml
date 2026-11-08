@@ -1,9 +1,7 @@
 # Formulario: Actions → "QE Helper" → Run workflow
-# Credenciales: GitHub Secrets en la simulación; en la corporación se cambia SOLO
-# el paso de secretos por HashiCorp Vault (bloque comentado). El código Java no cambia.
 name: QE Helper
 
-run-name: "Subtareas QE · ${{ inputs.issue_key }} · ${{ inputs.target }}${{ inputs.dry_run && ' (dry-run)' || '' }} · @${{ github.actor }}"
+run-name: "Subtareas QE · ${{ inputs.issue_key }} · ${{ inputs.target }} · @${{ github.actor }}"
 
 on:
   workflow_dispatch:
@@ -17,17 +15,12 @@ on:
         type: choice
         options: [mock, jira-cloud]
         default: mock
-      dry_run:
-        description: "Dry-run: consulta Jira pero no crea nada"
-        type: boolean
-        default: false
 
 concurrency:
   group: qe-helper-${{ inputs.issue_key }}
 
 permissions:
   contents: read
-  # id-token: write   # ← Vault (OIDC)
 
 jobs:
   subtasks:
@@ -35,8 +28,8 @@ jobs:
     timeout-minutes: 10
     environment: ${{ inputs.target }}   # cada destino tiene sus propios secrets
     env:
-      JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}         # ← quitar al usar Vault
-      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }} # ← quitar al usar Vault
+      JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,16 +39,8 @@ jobs:
           java-version: "21"
           cache: maven
 
-      # Corporativo: descomentar (y quitar los secrets.* de arriba).
-      # vault-action exporta JIRA_EMAIL / JIRA_API_TOKEN al env y los enmascara.
-      # - uses: hashicorp/vault-action@v3
-      #   with:
-      #     url: ${{ vars.VAULT_ADDR }}
-      #     method: jwt
-      #     role: qe-helper
-      #     secrets: |
-      #       secret/data/qa/jira-svc email     | JIRA_EMAIL ;
-      #       secret/data/qa/jira-svc api_token | JIRA_API_TOKEN
+      - name: Build
+        run: mvn -B -ntp -q package
 
       - name: Levantar mock de Jira
         if: inputs.target == 'mock'
@@ -69,5 +54,4 @@ jobs:
         env:
           JIRA_BASE_URL: ${{ inputs.target == 'mock' && 'http://127.0.0.1:8089' || vars.JIRA_BASE_URL }}
           QE_ISSUE_KEY: ${{ inputs.issue_key }}   # vía env, nunca interpolado en el script
-          DRY_RUN: ${{ inputs.dry_run }}
-        run: mvn -B -ntp -q compile exec:java
+        run: java -jar target/qe-helper.jar

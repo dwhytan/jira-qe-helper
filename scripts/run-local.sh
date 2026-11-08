@@ -3,26 +3,25 @@
 # Secretos en .secrets y variables en .vars (formato KEY=VALUE, compatible con `act`).
 #
 #   ./scripts/run-local.sh QA-100              # contra el mock
-#   ./scripts/run-local.sh QA-100 --dry-run
 #   ./scripts/run-local.sh QA-100 --jira-cloud # usa JIRA_BASE_URL de .vars
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source scripts/env.sh
 
 ISSUE_KEY="${1:-}"; shift || true
-TARGET=mock; DRY_RUN=false
+TARGET=mock
 for arg in "$@"; do
   case "$arg" in
-    --dry-run) DRY_RUN=true ;;
     --jira-cloud) TARGET=jira-cloud ;;
     *) echo "Opción desconocida: $arg"; exit 1 ;;
   esac
 done
-[[ -n "$ISSUE_KEY" ]] || { sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+[[ -n "$ISSUE_KEY" ]] || { sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 [[ -f .secrets ]] || { echo "Falta .secrets (cp .secrets.example .secrets)"; exit 1; }
 
 set -a; source .secrets; [[ -f .vars ]] && source .vars; set +a
 
-MVN="$(command -v mvn || echo "/Applications/IntelliJ IDEA.app/Contents/plugins/maven-plugin/lib/maven3/bin/mvn")"
+"$MVN" -B -ntp -q package
 OUT="target/local-run"; mkdir -p "$OUT"; : > "$OUT/summary.md"
 
 if [[ "$TARGET" == mock ]]; then
@@ -35,8 +34,7 @@ if [[ "$TARGET" == mock ]]; then
 fi
 
 set +e
-QE_ISSUE_KEY="$ISSUE_KEY" DRY_RUN="$DRY_RUN" GITHUB_STEP_SUMMARY="$OUT/summary.md" \
-  "$MVN" -B -ntp -q compile exec:java
+QE_ISSUE_KEY="$ISSUE_KEY" GITHUB_STEP_SUMMARY="$OUT/summary.md" java -jar target/qe-helper.jar
 CODE=$?
 set -e
 echo; echo "── Summary (lo que verías en Actions) ──"; cat "$OUT/summary.md"

@@ -31,29 +31,26 @@ scripts/run-local.sh                        corre el workflow en local
 scripts/e2e-mock.sh                         pruebas e2e
 ```
 
+El build (`mvn package`) genera `target/qe-helper.jar` con Jackson incluido, y el workflow
+lo ejecuta en el runner con `java -jar`.
+
 ## Secretos
 
-| Simulación (este repo)                         | Corporativo                                  |
-|------------------------------------------------|----------------------------------------------|
-| Secrets del Environment `mock` / `jira-cloud`  | HashiCorp Vault vía `hashicorp/vault-action` |
-
-Secretos: `JIRA_EMAIL`, `JIRA_API_TOKEN`. Variable (solo `jira-cloud`): `JIRA_BASE_URL`.
-
-Para pasar a Vault, en [`qe-helper.yml`](.github/workflows/qe-helper.yml) se descomenta el paso
-de Vault y `id-token: write`, y se quitan las 2 líneas `secrets.*`. El código no cambia.
+`JIRA_EMAIL` y `JIRA_API_TOKEN` se guardan en los Secrets del Environment (`mock` o `jira-cloud`).
+El Environment `jira-cloud` además necesita la variable `JIRA_BASE_URL`.
+La app solo lee variables de entorno: en la corporación esos valores vendrían de HashiCorp Vault.
 
 ## Uso
 
 **En GitHub:** Settings → Environments → `mock` → agrega los 2 secrets (valores inventados).
 Luego Actions → QE Helper → Run workflow → `issue_key = QA-100`.
 
-**En local** (Java 21, Maven, Python 3):
+**En local** (JDK 21, Maven, Python 3):
 
 ```bash
 cp .secrets.example .secrets
 ./scripts/run-local.sh QA-100              # contra el mock
-./scripts/run-local.sh QA-100 --dry-run
-./scripts/e2e-mock.sh                      # 7 escenarios
+./scripts/e2e-mock.sh                      # 6 escenarios
 ```
 
 Para un Jira Cloud real: pon el token en `.secrets`, crea `.vars` con `JIRA_BASE_URL` y usa `--jira-cloud`.

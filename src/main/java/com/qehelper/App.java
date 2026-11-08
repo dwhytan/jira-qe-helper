@@ -45,7 +45,6 @@ public final class App {
 
     private static List<String> run() {
         String parentKey = env("QE_ISSUE_KEY").toUpperCase();
-        boolean dryRun = Boolean.parseBoolean(env("DRY_RUN"));
         if (!ISSUE_KEY.matcher(parentKey).matches()) {
             throw new IllegalArgumentException("issue_key inválido: '" + parentKey + "' (formato esperado: PROJ-123)");
         }
@@ -84,12 +83,6 @@ public final class App {
             f.putArray("labels").add("qe-helper");
         }
 
-        if (dryRun) {
-            System.out.println("[DRY-RUN] POST /rest/api/3/issue/bulk\n" + body.toPrettyString());
-            toCreate.forEach(s -> rows.add(row("🧪 Dry-run", "", s)));
-            return rows;
-        }
-
         JsonNode res = jira.bulkCreate(body);
         // Jira devuelve los creados en orden, omitiendo los fallidos (indicados en failedElementNumber).
         Set<Integer> failed = new HashSet<>();
@@ -117,8 +110,7 @@ public final class App {
     private static void writeSummary(List<String> rows, String error) {
         String file = env("GITHUB_STEP_SUMMARY");
         if (file.isEmpty()) return;
-        StringBuilder md = new StringBuilder("## Subtareas QE · " + env("QE_ISSUE_KEY").toUpperCase()
-                + (Boolean.parseBoolean(env("DRY_RUN")) ? " 🧪 dry-run" : "") + "\n\n");
+        StringBuilder md = new StringBuilder("## Subtareas QE · " + env("QE_ISSUE_KEY").toUpperCase() + "\n\n");
         if (error != null) md.append("> ❌ ").append(error).append("\n\n");
         if (!rows.isEmpty()) {
             md.append("| Estado | Issue | Resumen |\n|---|---|---|\n");
