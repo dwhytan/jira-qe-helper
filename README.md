@@ -19,6 +19,10 @@ por defecto). Cada fase crea sus 4 subtareas; puedes marcar todas, algunas o nin
 
 El catálogo vive en `App.PHASES`.
 
+**Opción A (ejemplo para comparar):** el workflow *QE Helper · subtareas*
+(`qe-helper-subtareas.yml`) muestra una casilla por cada una de las 20 subtareas, con texto
+corto. Usa 22 de los 25 inputs que permite GitHub.
+
 - Una sola llamada `POST /rest/api/3/issue/bulk`.
 - **No duplica**: si una subtarea ya existe en la historia, la omite.
 - El tipo subtarea se detecta del proyecto, sin importar su nombre (`Subtask`, `Subtarea`…).
@@ -31,7 +35,8 @@ El catálogo vive en `App.PHASES`.
 src/main/java/com/qehelper/App.java         flujo principal
 src/main/java/com/qehelper/JiraClient.java  cliente REST de Jira
 mock/jira_mock.py                           Jira simulado para probar sin instancia real
-.github/workflows/qe-helper.yml             formulario (workflow_dispatch)
+.github/workflows/qe-helper.yml             formulario por fase (workflow_dispatch)
+.github/workflows/qe-helper-subtareas.yml   formulario por subtarea (opción A)
 .github/workflows/ci.yml                    e2e contra el mock en cada push
 scripts/run-local.sh                        corre el workflow en local
 scripts/e2e-mock.sh                         pruebas e2e
@@ -58,7 +63,7 @@ Luego Actions → QE Helper → Run workflow → `issue_key = QA-100`.
 cp .secrets.example .secrets
 ./scripts/run-local.sh QA-100              # contra el mock
 QE_FASE_2=false ./scripts/run-local.sh QA-100      # desmarca la fase Diseño
-./scripts/e2e-mock.sh                      # 10 escenarios
+./scripts/e2e-mock.sh                      # 11 escenarios
 ```
 
 Para un Jira Cloud real: pon el token en `.secrets`, crea `.vars` con `JIRA_BASE_URL` y usa `--jira-cloud`.

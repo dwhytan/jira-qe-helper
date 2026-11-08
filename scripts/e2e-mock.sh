@@ -43,6 +43,8 @@ check "casilla con valor inválido" 1 QA-101 0 QE_ISSUE_KEY=QA-101 QE_FASE_2=si
 NONE=(QE_FASE_1=false QE_FASE_2=false QE_FASE_3=false QE_FASE_4=false QE_FASE_5=false)
 check "ninguna fase"              0 QA-101 0 QE_ISSUE_KEY=QA-101 "${NONE[@]}"
 check "fases 1 y 3"               0 QA-101 8 QE_ISSUE_KEY=QA-101 QE_FASE_2=false QE_FASE_4=false QE_FASE_5=false
+ONLY_5_13=(); for i in $(seq 1 20); do [[ $i == 5 || $i == 13 ]] || ONLY_5_13+=("QE_SUBTASK_$i=false"); done
+check "subtareas sueltas 5 y 13"  0 QA-101 10 QE_ISSUE_KEY=QA-101 "${ONLY_5_13[@]}"
 check "luego todas, sin duplicar" 0 QA-101 20 QE_ISSUE_KEY=QA-101
 set -e
 echo; echo "E2E: $PASS ok, $FAIL fallidos"

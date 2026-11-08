@@ -76,9 +76,11 @@ public final class App {
         List<Phase> phases = selectedPhases();
         List<String> rows = new ArrayList<>();
         List<Item> selected = new ArrayList<>();
+        int n = 0;
         for (Phase p : PHASES) {
             for (String summary : p.subtasks()) {
-                if (phases.contains(p)) selected.add(new Item(p.name(), summary));
+                n++;
+                if (phases.contains(p) && flag("QE_SUBTASK_" + n)) selected.add(new Item(p.name(), summary));
                 else rows.add(row("➖ No seleccionada", p.name(), "", summary));
             }
         }
@@ -130,10 +132,10 @@ public final class App {
             Item it = toCreate.get(i);
             rows.add(row("❌ Error", it.phase(), "", it.summary() + " — " + err.path("elementErrors").path("errors")));
         }
-        int n = 0;
+        int created = 0;
         for (int i = 0; i < toCreate.size(); i++) {
             if (failed.contains(i)) continue;
-            String key = res.path("issues").path(n++).path("key").asText();
+            String key = res.path("issues").path(created++).path("key").asText();
             Item it = toCreate.get(i);
             rows.add(row("✅ Creada", it.phase(), "[" + key + "](" + jira.browseUrl(key) + ")", it.summary()));
         }
@@ -141,20 +143,25 @@ public final class App {
     }
 
     /**
-     * QE_FASE_1..5 vienen de las casillas del formulario ("true"/"false").
-     * Si una no está definida (ejecución local) se considera seleccionada.
+     * Las casillas del formulario llegan como "true"/"false":
+     * QE_FASE_1..5 (workflow por fases) o QE_SUBTASK_1..20 (workflow por subtarea).
+     * Una subtarea se crea si su fase y ella misma están seleccionadas; si una variable
+     * no está definida (ejecución local o el otro workflow) se considera seleccionada.
      */
     private static List<Phase> selectedPhases() {
         List<Phase> selected = new ArrayList<>();
         for (int i = 0; i < PHASES.size(); i++) {
-            String name = "QE_FASE_" + (i + 1);
-            String v = env(name).toLowerCase();
-            if (!v.isEmpty() && !v.equals("true") && !v.equals("false")) {
-                throw new IllegalArgumentException(name + " inválido: '" + v + "' (esperado true o false)");
-            }
-            if (!v.equals("false")) selected.add(PHASES.get(i));
+            if (flag("QE_FASE_" + (i + 1))) selected.add(PHASES.get(i));
         }
         return selected;
+    }
+
+    private static boolean flag(String name) {
+        String v = env(name).toLowerCase();
+        if (!v.isEmpty() && !v.equals("true") && !v.equals("false")) {
+            throw new IllegalArgumentException(name + " inválido: '" + v + "' (esperado true o false)");
+        }
+        return !v.equals("false");
     }
 
     private static String row(String status, String phase, String key, String summary) {
