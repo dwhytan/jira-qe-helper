@@ -1,6 +1,5 @@
 target/
-*.log
-qe-report.json
 .idea/
-*.iml
 .DS_Store
+.secrets
+.vars

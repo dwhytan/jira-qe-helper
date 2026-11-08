@@ -1,52 +1,138 @@
 package com.qehelper;
 
-import com.qehelper.config.Config;
-import com.qehelper.config.Inputs;
-import com.qehelper.http.HttpGateway;
-import com.qehelper.ops.Context;
-import com.qehelper.ops.CreateDefect;
-import com.qehelper.ops.CreateSubtasks;
-import com.qehelper.ops.CreateTestPlan;
-import com.qehelper.ops.Operation;
-import com.qehelper.report.Report;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
- * Punto de entrada headless. Ya no hay MyData/QEHelperView: el formulario es workflow_dispatch
- * y las credenciales las inyecta el pipeline como variables de entorno.
+ * v1: crea en bulk las subtareas QE de una historia de usuario.
+ * Todo llega por variables de entorno: credenciales desde el gestor de secretos del pipeline
+ * y el issue padre desde el formulario del workflow.
  */
 public final class App {
 
+    static final List<String> SUBTASKS = List.of(
+            "(QE) Análisis y elaboración de plan de pruebas",
+            "(QE) Creación de casos de prueba",
+            "(QE) Preparación de datos y ambiente de pruebas",
+            "(QE) Ejecución de pruebas y reporte de defectos",
+            "(QE) Registro de evidencias y cierre de pruebas");
+
+    private static final Pattern ISSUE_KEY = Pattern.compile("^[A-Z][A-Z0-9_]+-\\d+$");
+
     public static void main(String[] args) {
-        Config cfg = Config.fromEnv();
-        Inputs in = Inputs.fromEnv();
-        if (args.length > 0 && in.operation().isBlank()) {
-            in = new Inputs(args[0].toLowerCase(), in.issueKey(), in.subtasks(), in.summary(), in.description(), in.tests());
-        }
-        Report report = new Report(in.operation(), cfg.actor(), cfg.runUrl(), cfg.dryRun());
-        String fatal = null;
-
-        System.out.println("QE Helper · operación=" + in.operation() + " · " + cfg);
+        List<String> rows = new ArrayList<>();
+        String error = null;
         try {
-            Operation op = switch (in.operation()) {
-                case "create-subtasks" -> new CreateSubtasks();
-                case "create-defect" -> new CreateDefect();
-                case "create-test-plan" -> new CreateTestPlan();
-                default -> throw new IllegalArgumentException("Operación desconocida: '" + in.operation()
-                        + "'. Usa create-subtasks | create-defect | create-test-plan");
-            };
-            cfg.requireJira();
-            Context ctx = new Context(cfg, in, new HttpGateway(cfg.dryRun()), report);
-            System.out.println("Autenticado en Jira como: " + ctx.jira.whoAmI());
-            op.run(ctx);
-        } catch (HttpGateway.ApiException e) {
-            fatal = e.getMessage() + (e.status() == 401 || e.status() == 403
-                    ? " — revisa que el secreto (email/token) sea válido y tenga permisos en el proyecto" : "");
+            rows = run();
         } catch (RuntimeException e) {
-            fatal = e.getMessage();
+            error = e.getMessage();
+            System.err.println("ERROR: " + error);
+        }
+        writeSummary(rows, error);
+        System.exit(error == null && rows.stream().noneMatch(r -> r.startsWith("| ❌")) ? 0 : 1);
+    }
+
+    private static List<String> run() {
+        String parentKey = env("QE_ISSUE_KEY").toUpperCase();
+        boolean dryRun = Boolean.parseBoolean(env("DRY_RUN"));
+        if (!ISSUE_KEY.matcher(parentKey).matches()) {
+            throw new IllegalArgumentException("issue_key inválido: '" + parentKey + "' (formato esperado: PROJ-123)");
+        }
+        List<String> missing = new ArrayList<>();
+        for (String name : List.of("JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN")) {
+            if (env(name).isEmpty()) missing.add(name);
+        }
+        if (!missing.isEmpty()) throw new IllegalStateException("Faltan secretos/variables: " + String.join(", ", missing));
+
+        JiraClient jira = new JiraClient(env("JIRA_BASE_URL"), env("JIRA_EMAIL"), env("JIRA_API_TOKEN"));
+        JsonNode parent = jira.getIssue(parentKey).path("fields");
+        String projectKey = parent.path("project").path("key").asText();
+        System.out.println("Padre: " + parentKey + " — " + parent.path("summary").asText());
+
+        // Idempotencia: no duplicar subtareas si el workflow se vuelve a ejecutar sobre el mismo padre.
+        Set<String> existing = new HashSet<>();
+        parent.path("subtasks").forEach(st -> existing.add(st.path("fields").path("summary").asText()));
+
+        List<String> rows = new ArrayList<>();
+        List<String> toCreate = new ArrayList<>();
+        for (String summary : SUBTASKS) {
+            if (existing.contains(summary)) rows.add(row("⏭️ Ya existe", "", summary));
+            else toCreate.add(summary);
+        }
+        if (toCreate.isEmpty()) return rows;
+
+        String typeId = jira.subtaskTypeId(projectKey);
+        ObjectNode body = JiraClient.JSON.createObjectNode();
+        ArrayNode updates = body.putArray("issueUpdates");
+        for (String summary : toCreate) {
+            ObjectNode f = updates.addObject().putObject("fields");
+            f.putObject("project").put("key", projectKey);
+            f.putObject("parent").put("key", parentKey);
+            f.putObject("issuetype").put("id", typeId);
+            f.put("summary", summary);
+            f.putArray("labels").add("qe-helper");
         }
 
-        if (fatal != null) System.err.println("ERROR: " + fatal);
-        report.publish(cfg.reportPath(), fatal);
-        System.exit(fatal != null || report.hasFailures() ? 1 : 0);
+        if (dryRun) {
+            System.out.println("[DRY-RUN] POST /rest/api/3/issue/bulk\n" + body.toPrettyString());
+            toCreate.forEach(s -> rows.add(row("🧪 Dry-run", "", s)));
+            return rows;
+        }
+
+        JsonNode res = jira.bulkCreate(body);
+        // Jira devuelve los creados en orden, omitiendo los fallidos (indicados en failedElementNumber).
+        Set<Integer> failed = new HashSet<>();
+        for (JsonNode err : res.path("errors")) {
+            int i = err.path("failedElementNumber").asInt();
+            failed.add(i);
+            rows.add(row("❌ Error", "", toCreate.get(i) + " — " + err.path("elementErrors").path("errors")));
+        }
+        int n = 0;
+        for (int i = 0; i < toCreate.size(); i++) {
+            if (failed.contains(i)) continue;
+            String key = res.path("issues").path(n++).path("key").asText();
+            rows.add(row("✅ Creada", "[" + key + "](" + jira.browseUrl(key) + ")", toCreate.get(i)));
+        }
+        return rows;
+    }
+
+    private static String row(String status, String key, String summary) {
+        String r = "| " + status + " | " + key + " | " + summary.replace("|", "\\|") + " |";
+        System.out.println(r);
+        return r;
+    }
+
+    /** Resultado visible en la pestaña Summary del run de GitHub Actions. */
+    private static void writeSummary(List<String> rows, String error) {
+        String file = env("GITHUB_STEP_SUMMARY");
+        if (file.isEmpty()) return;
+        StringBuilder md = new StringBuilder("## Subtareas QE · " + env("QE_ISSUE_KEY").toUpperCase()
+                + (Boolean.parseBoolean(env("DRY_RUN")) ? " 🧪 dry-run" : "") + "\n\n");
+        if (error != null) md.append("> ❌ ").append(error).append("\n\n");
+        if (!rows.isEmpty()) {
+            md.append("| Estado | Issue | Resumen |\n|---|---|---|\n");
+            rows.forEach(r -> md.append(r).append('\n'));
+        }
+        try {
+            Files.writeString(Path.of(file), md.append('\n'), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            System.err.println("No se pudo escribir el summary: " + e.getMessage());
+        }
+    }
+
+    private static String env(String name) {
+        String v = System.getenv(name);
+        return v == null ? "" : v.trim();
     }
 }

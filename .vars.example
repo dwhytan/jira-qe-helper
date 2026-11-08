@@ -1,0 +1,2 @@
+# cp .vars.example .vars   — solo para --jira-cloud
+JIRA_BASE_URL=https://tu-sitio.atlassian.net
