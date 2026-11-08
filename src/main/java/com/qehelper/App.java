@@ -15,18 +15,43 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * v1: crea en bulk las subtareas QE de una historia de usuario.
- * Todo llega por variables de entorno: credenciales desde el gestor de secretos del pipeline
- * y el issue padre desde el formulario del workflow.
+ * Crea en bulk las subtareas QE de una historia de usuario, agrupadas por fase.
+ * Todo llega por variables de entorno: credenciales desde el gestor de secretos del pipeline,
+ * y el issue padre y las fases elegidas desde el formulario del workflow.
  */
 public final class App {
 
-    static final List<String> SUBTASKS = List.of(
-            "(QE) Análisis y elaboración de plan de pruebas",
-            "(QE) Creación de casos de prueba",
-            "(QE) Preparación de datos y ambiente de pruebas",
-            "(QE) Ejecución de pruebas y reporte de defectos",
-            "(QE) Registro de evidencias y cierre de pruebas");
+    record Phase(String name, List<String> subtasks) {}
+
+    /** El orden importa: la fase N se activa con QE_FASE_N. */
+    static final List<Phase> PHASES = List.of(
+            new Phase("Planificación", List.of(
+                    "(QE) Análisis de criterios de aceptación",
+                    "(QE) Elaboración de plan de pruebas",
+                    "(QE) Estimación de esfuerzo de pruebas",
+                    "(QE) Identificación de riesgos de calidad")),
+            new Phase("Diseño", List.of(
+                    "(QE) Diseño de casos de prueba funcionales",
+                    "(QE) Diseño de pruebas de performance",
+                    "(QE) Diseño de pruebas de seguridad",
+                    "(QE) Revisión de casos de prueba con el equipo")),
+            new Phase("Preparación", List.of(
+                    "(QE) Preparación de datos de prueba",
+                    "(QE) Configuración de ambiente de pruebas",
+                    "(QE) Automatización de casos de prueba",
+                    "(QE) Smoke test del despliegue en QA")),
+            new Phase("Ejecución", List.of(
+                    "(QE) Ejecución de pruebas funcionales",
+                    "(QE) Ejecución de pruebas de regresión",
+                    "(QE) Ejecución de pruebas de performance",
+                    "(QE) Ejecución de pruebas de seguridad")),
+            new Phase("Cierre", List.of(
+                    "(QE) Reporte y seguimiento de defectos",
+                    "(QE) Registro de evidencias",
+                    "(QE) Pruebas en producción (post-despliegue)",
+                    "(QE) Informe de cierre de pruebas")));
+
+    private record Item(String phase, String summary) {}
 
     private static final Pattern ISSUE_KEY = Pattern.compile("^[A-Z][A-Z0-9_]+-\\d+$");
 
@@ -48,13 +73,17 @@ public final class App {
         if (!ISSUE_KEY.matcher(parentKey).matches()) {
             throw new IllegalArgumentException("issue_key inválido: '" + parentKey + "' (formato esperado: PROJ-123)");
         }
-        List<String> selected = selectedSubtasks();
+        List<Phase> phases = selectedPhases();
         List<String> rows = new ArrayList<>();
-        for (String summary : SUBTASKS) {
-            if (!selected.contains(summary)) rows.add(row("➖ No seleccionada", "", summary));
+        List<Item> selected = new ArrayList<>();
+        for (Phase p : PHASES) {
+            for (String summary : p.subtasks()) {
+                if (phases.contains(p)) selected.add(new Item(p.name(), summary));
+                else rows.add(row("➖ No seleccionada", p.name(), "", summary));
+            }
         }
         if (selected.isEmpty()) {
-            System.out.println("Ninguna subtarea seleccionada: no se llama a Jira.");
+            System.out.println("Ninguna fase seleccionada: no se llama a Jira.");
             return rows;
         }
 
@@ -73,22 +102,22 @@ public final class App {
         Set<String> existing = new HashSet<>();
         parent.path("subtasks").forEach(st -> existing.add(st.path("fields").path("summary").asText()));
 
-        List<String> toCreate = new ArrayList<>();
-        for (String summary : selected) {
-            if (existing.contains(summary)) rows.add(row("⏭️ Ya existe", "", summary));
-            else toCreate.add(summary);
+        List<Item> toCreate = new ArrayList<>();
+        for (Item it : selected) {
+            if (existing.contains(it.summary())) rows.add(row("⏭️ Ya existe", it.phase(), "", it.summary()));
+            else toCreate.add(it);
         }
         if (toCreate.isEmpty()) return rows;
 
         String typeId = jira.subtaskTypeId(projectKey);
         ObjectNode body = JiraClient.JSON.createObjectNode();
         ArrayNode updates = body.putArray("issueUpdates");
-        for (String summary : toCreate) {
+        for (Item it : toCreate) {
             ObjectNode f = updates.addObject().putObject("fields");
             f.putObject("project").put("key", projectKey);
             f.putObject("parent").put("key", parentKey);
             f.putObject("issuetype").put("id", typeId);
-            f.put("summary", summary);
+            f.put("summary", it.summary());
             f.putArray("labels").add("qe-helper");
         }
 
@@ -98,36 +127,38 @@ public final class App {
         for (JsonNode err : res.path("errors")) {
             int i = err.path("failedElementNumber").asInt();
             failed.add(i);
-            rows.add(row("❌ Error", "", toCreate.get(i) + " — " + err.path("elementErrors").path("errors")));
+            Item it = toCreate.get(i);
+            rows.add(row("❌ Error", it.phase(), "", it.summary() + " — " + err.path("elementErrors").path("errors")));
         }
         int n = 0;
         for (int i = 0; i < toCreate.size(); i++) {
             if (failed.contains(i)) continue;
             String key = res.path("issues").path(n++).path("key").asText();
-            rows.add(row("✅ Creada", "[" + key + "](" + jira.browseUrl(key) + ")", toCreate.get(i)));
+            Item it = toCreate.get(i);
+            rows.add(row("✅ Creada", it.phase(), "[" + key + "](" + jira.browseUrl(key) + ")", it.summary()));
         }
         return rows;
     }
 
     /**
-     * QE_SUBTASK_1..5 vienen de los checkboxes del formulario ("true"/"false").
+     * QE_FASE_1..5 vienen de las casillas del formulario ("true"/"false").
      * Si una no está definida (ejecución local) se considera seleccionada.
      */
-    private static List<String> selectedSubtasks() {
-        List<String> selected = new ArrayList<>();
-        for (int i = 0; i < SUBTASKS.size(); i++) {
-            String name = "QE_SUBTASK_" + (i + 1);
+    private static List<Phase> selectedPhases() {
+        List<Phase> selected = new ArrayList<>();
+        for (int i = 0; i < PHASES.size(); i++) {
+            String name = "QE_FASE_" + (i + 1);
             String v = env(name).toLowerCase();
             if (!v.isEmpty() && !v.equals("true") && !v.equals("false")) {
                 throw new IllegalArgumentException(name + " inválido: '" + v + "' (esperado true o false)");
             }
-            if (!v.equals("false")) selected.add(SUBTASKS.get(i));
+            if (!v.equals("false")) selected.add(PHASES.get(i));
         }
         return selected;
     }
 
-    private static String row(String status, String key, String summary) {
-        String r = "| " + status + " | " + key + " | " + summary.replace("|", "\\|") + " |";
+    private static String row(String status, String phase, String key, String summary) {
+        String r = "| " + status + " | " + phase + " | " + key + " | " + summary.replace("|", "\\|") + " |";
         System.out.println(r);
         return r;
     }
@@ -139,7 +170,7 @@ public final class App {
         StringBuilder md = new StringBuilder("## Subtareas QE · " + env("QE_ISSUE_KEY").toUpperCase() + "\n\n");
         if (error != null) md.append("> ❌ ").append(error).append("\n\n");
         if (!rows.isEmpty()) {
-            md.append("| Estado | Issue | Resumen |\n|---|---|---|\n");
+            md.append("| Estado | Fase | Issue | Resumen |\n|---|---|---|---|\n");
             rows.forEach(r -> md.append(r).append('\n'));
         }
         try {

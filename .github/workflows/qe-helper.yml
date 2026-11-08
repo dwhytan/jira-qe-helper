@@ -15,25 +15,25 @@ on:
         type: choice
         options: [mock, jira-cloud]
         default: mock
-      # Subtareas a crear (marca todas, algunas o ninguna)
-      st_analisis:
-        description: "(QE) Análisis y elaboración de plan de pruebas"
+      # Fases a crear (4 subtareas c/u, detalle en el README). Todas, algunas o ninguna.
+      fase_planificacion:
+        description: "Planificación (4 subtareas)"
         type: boolean
         default: true
-      st_casos:
-        description: "(QE) Creación de casos de prueba"
+      fase_diseno:
+        description: "Diseño (4 subtareas)"
         type: boolean
         default: true
-      st_datos:
-        description: "(QE) Preparación de datos y ambiente de pruebas"
+      fase_preparacion:
+        description: "Preparación (4 subtareas)"
         type: boolean
         default: true
-      st_ejecucion:
-        description: "(QE) Ejecución de pruebas y reporte de defectos"
+      fase_ejecucion:
+        description: "Ejecución (4 subtareas)"
         type: boolean
         default: true
-      st_evidencias:
-        description: "(QE) Registro de evidencias y cierre de pruebas"
+      fase_cierre:
+        description: "Cierre (4 subtareas)"
         type: boolean
         default: true
 
@@ -75,9 +75,9 @@ jobs:
         env:
           JIRA_BASE_URL: ${{ inputs.target == 'mock' && 'http://127.0.0.1:8089' || vars.JIRA_BASE_URL }}
           QE_ISSUE_KEY: ${{ inputs.issue_key }}   # vía env, nunca interpolado en el script
-          QE_SUBTASK_1: ${{ inputs.st_analisis }}
-          QE_SUBTASK_2: ${{ inputs.st_casos }}
-          QE_SUBTASK_3: ${{ inputs.st_datos }}
-          QE_SUBTASK_4: ${{ inputs.st_ejecucion }}
-          QE_SUBTASK_5: ${{ inputs.st_evidencias }}
+          QE_FASE_1: ${{ inputs.fase_planificacion }}
+          QE_FASE_2: ${{ inputs.fase_diseno }}
+          QE_FASE_3: ${{ inputs.fase_preparacion }}
+          QE_FASE_4: ${{ inputs.fase_ejecucion }}
+          QE_FASE_5: ${{ inputs.fase_cierre }}
         run: java -jar target/qe-helper.jar

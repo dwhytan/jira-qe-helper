@@ -4,21 +4,25 @@ Crea en bulk las subtareas QE de una historia de usuario en Jira Cloud desde un
 **workflow de GitHub Actions**. El formulario del workflow es la interfaz y las credenciales
 las inyecta el pipeline desde un gestor de secretos, nunca la máquina del usuario.
 
-## v2 — Subtareas QE seleccionables
+## v2 — Subtareas QE por fase
 
-Dada una historia (`issue_key`), el formulario muestra una casilla por subtarea
-(todas marcadas por defecto) para crear todas, algunas o ninguna:
+Dada una historia (`issue_key`), el formulario muestra una casilla por fase (todas marcadas
+por defecto). Cada fase crea sus 4 subtareas; puedes marcar todas, algunas o ninguna:
 
-1. (QE) Análisis y elaboración de plan de pruebas
-2. (QE) Creación de casos de prueba
-3. (QE) Preparación de datos y ambiente de pruebas
-4. (QE) Ejecución de pruebas y reporte de defectos
-5. (QE) Registro de evidencias y cierre de pruebas
+| Fase | Subtareas |
+|---|---|
+| Planificación | (QE) Análisis de criterios de aceptación · (QE) Elaboración de plan de pruebas · (QE) Estimación de esfuerzo de pruebas · (QE) Identificación de riesgos de calidad |
+| Diseño | (QE) Diseño de casos de prueba funcionales · (QE) Diseño de pruebas de performance · (QE) Diseño de pruebas de seguridad · (QE) Revisión de casos de prueba con el equipo |
+| Preparación | (QE) Preparación de datos de prueba · (QE) Configuración de ambiente de pruebas · (QE) Automatización de casos de prueba · (QE) Smoke test del despliegue en QA |
+| Ejecución | (QE) Ejecución de pruebas funcionales · (QE) Ejecución de pruebas de regresión · (QE) Ejecución de pruebas de performance · (QE) Ejecución de pruebas de seguridad |
+| Cierre | (QE) Reporte y seguimiento de defectos · (QE) Registro de evidencias · (QE) Pruebas en producción (post-despliegue) · (QE) Informe de cierre de pruebas |
+
+El catálogo vive en `App.PHASES`.
 
 - Una sola llamada `POST /rest/api/3/issue/bulk`.
 - **No duplica**: si una subtarea ya existe en la historia, la omite.
 - El tipo subtarea se detecta del proyecto, sin importar su nombre (`Subtask`, `Subtarea`…).
-- Las no marcadas aparecen como "➖ No seleccionada"; si no marcas ninguna, no se llama a Jira.
+- Las fases no marcadas aparecen como "➖ No seleccionada"; si no marcas ninguna, no se llama a Jira.
 - El resultado aparece en la pestaña **Summary** del run.
 
 ## Estructura
@@ -53,7 +57,7 @@ Luego Actions → QE Helper → Run workflow → `issue_key = QA-100`.
 ```bash
 cp .secrets.example .secrets
 ./scripts/run-local.sh QA-100              # contra el mock
-QE_SUBTASK_2=false ./scripts/run-local.sh QA-100   # desmarca la subtarea 2
+QE_FASE_2=false ./scripts/run-local.sh QA-100      # desmarca la fase Diseño
 ./scripts/e2e-mock.sh                      # 10 escenarios
 ```
 
@@ -64,6 +68,6 @@ Para un Jira Cloud real: pon el token en `.secrets`, crea `.vars` con `JIRA_BASE
 | Versión | Alcance                                                        | Estado |
 |---------|----------------------------------------------------------------|--------|
 | v1      | 5 subtareas QE en bulk                                         | ✅     |
-| v2      | Elegir qué subtareas crear                                     | ✅     |
+| v2      | 20 subtareas en 5 fases seleccionables                         | ✅     |
 | v3      | Crear defecto vinculado a la historia                          | —      |
 | v4      | Crear Test Plan y asociar tests (Xray)                         | —      |
