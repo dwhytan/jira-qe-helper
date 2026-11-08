@@ -15,6 +15,27 @@ on:
         type: choice
         options: [mock, jira-cloud]
         default: mock
+      # Subtareas a crear (marca todas, algunas o ninguna)
+      st_analisis:
+        description: "(QE) Análisis y elaboración de plan de pruebas"
+        type: boolean
+        default: true
+      st_casos:
+        description: "(QE) Creación de casos de prueba"
+        type: boolean
+        default: true
+      st_datos:
+        description: "(QE) Preparación de datos y ambiente de pruebas"
+        type: boolean
+        default: true
+      st_ejecucion:
+        description: "(QE) Ejecución de pruebas y reporte de defectos"
+        type: boolean
+        default: true
+      st_evidencias:
+        description: "(QE) Registro de evidencias y cierre de pruebas"
+        type: boolean
+        default: true
 
 concurrency:
   group: qe-helper-${{ inputs.issue_key }}
@@ -54,4 +75,9 @@ jobs:
         env:
           JIRA_BASE_URL: ${{ inputs.target == 'mock' && 'http://127.0.0.1:8089' || vars.JIRA_BASE_URL }}
           QE_ISSUE_KEY: ${{ inputs.issue_key }}   # vía env, nunca interpolado en el script
+          QE_SUBTASK_1: ${{ inputs.st_analisis }}
+          QE_SUBTASK_2: ${{ inputs.st_casos }}
+          QE_SUBTASK_3: ${{ inputs.st_datos }}
+          QE_SUBTASK_4: ${{ inputs.st_ejecucion }}
+          QE_SUBTASK_5: ${{ inputs.st_evidencias }}
         run: java -jar target/qe-helper.jar

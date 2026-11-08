@@ -48,6 +48,16 @@ public final class App {
         if (!ISSUE_KEY.matcher(parentKey).matches()) {
             throw new IllegalArgumentException("issue_key inválido: '" + parentKey + "' (formato esperado: PROJ-123)");
         }
+        List<String> selected = selectedSubtasks();
+        List<String> rows = new ArrayList<>();
+        for (String summary : SUBTASKS) {
+            if (!selected.contains(summary)) rows.add(row("➖ No seleccionada", "", summary));
+        }
+        if (selected.isEmpty()) {
+            System.out.println("Ninguna subtarea seleccionada: no se llama a Jira.");
+            return rows;
+        }
+
         List<String> missing = new ArrayList<>();
         for (String name : List.of("JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN")) {
             if (env(name).isEmpty()) missing.add(name);
@@ -63,9 +73,8 @@ public final class App {
         Set<String> existing = new HashSet<>();
         parent.path("subtasks").forEach(st -> existing.add(st.path("fields").path("summary").asText()));
 
-        List<String> rows = new ArrayList<>();
         List<String> toCreate = new ArrayList<>();
-        for (String summary : SUBTASKS) {
+        for (String summary : selected) {
             if (existing.contains(summary)) rows.add(row("⏭️ Ya existe", "", summary));
             else toCreate.add(summary);
         }
@@ -98,6 +107,23 @@ public final class App {
             rows.add(row("✅ Creada", "[" + key + "](" + jira.browseUrl(key) + ")", toCreate.get(i)));
         }
         return rows;
+    }
+
+    /**
+     * QE_SUBTASK_1..5 vienen de los checkboxes del formulario ("true"/"false").
+     * Si una no está definida (ejecución local) se considera seleccionada.
+     */
+    private static List<String> selectedSubtasks() {
+        List<String> selected = new ArrayList<>();
+        for (int i = 0; i < SUBTASKS.size(); i++) {
+            String name = "QE_SUBTASK_" + (i + 1);
+            String v = env(name).toLowerCase();
+            if (!v.isEmpty() && !v.equals("true") && !v.equals("false")) {
+                throw new IllegalArgumentException(name + " inválido: '" + v + "' (esperado true o false)");
+            }
+            if (!v.equals("false")) selected.add(SUBTASKS.get(i));
+        }
+        return selected;
     }
 
     private static String row(String status, String key, String summary) {

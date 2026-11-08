@@ -4,9 +4,10 @@ Crea en bulk las subtareas QE de una historia de usuario en Jira Cloud desde un
 **workflow de GitHub Actions**. El formulario del workflow es la interfaz y las credenciales
 las inyecta el pipeline desde un gestor de secretos, nunca la máquina del usuario.
 
-## v1 — Subtareas QE
+## v2 — Subtareas QE seleccionables
 
-Dada una historia (`issue_key`), crea estas subtareas:
+Dada una historia (`issue_key`), el formulario muestra una casilla por subtarea
+(todas marcadas por defecto) para crear todas, algunas o ninguna:
 
 1. (QE) Análisis y elaboración de plan de pruebas
 2. (QE) Creación de casos de prueba
@@ -17,12 +18,13 @@ Dada una historia (`issue_key`), crea estas subtareas:
 - Una sola llamada `POST /rest/api/3/issue/bulk`.
 - **No duplica**: si una subtarea ya existe en la historia, la omite.
 - El tipo subtarea se detecta del proyecto, sin importar su nombre (`Subtask`, `Subtarea`…).
+- Las no marcadas aparecen como "➖ No seleccionada"; si no marcas ninguna, no se llama a Jira.
 - El resultado aparece en la pestaña **Summary** del run.
 
 ## Estructura
 
 ```
-src/main/java/com/qehelper/App.java         flujo de la v1
+src/main/java/com/qehelper/App.java         flujo principal
 src/main/java/com/qehelper/JiraClient.java  cliente REST de Jira
 mock/jira_mock.py                           Jira simulado para probar sin instancia real
 .github/workflows/qe-helper.yml             formulario (workflow_dispatch)
@@ -50,7 +52,8 @@ Luego Actions → QE Helper → Run workflow → `issue_key = QA-100`.
 ```bash
 cp .secrets.example .secrets
 ./scripts/run-local.sh QA-100              # contra el mock
-./scripts/e2e-mock.sh                      # 6 escenarios
+QE_SUBTASK_2=false ./scripts/run-local.sh QA-100   # desmarca la subtarea 2
+./scripts/e2e-mock.sh                      # 10 escenarios
 ```
 
 Para un Jira Cloud real: pon el token en `.secrets`, crea `.vars` con `JIRA_BASE_URL` y usa `--jira-cloud`.
@@ -60,6 +63,6 @@ Para un Jira Cloud real: pon el token en `.secrets`, crea `.vars` con `JIRA_BASE
 | Versión | Alcance                                                        | Estado |
 |---------|----------------------------------------------------------------|--------|
 | v1      | 5 subtareas QE en bulk                                         | ✅     |
-| v2      | Elegir qué subtareas crear                                     | —      |
+| v2      | Elegir qué subtareas crear                                     | ✅     |
 | v3      | Crear defecto vinculado a la historia                          | —      |
 | v4      | Crear Test Plan y asociar tests (Xray)                         | —      |

