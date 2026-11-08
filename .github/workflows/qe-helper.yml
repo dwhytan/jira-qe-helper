@@ -1,7 +1,7 @@
 # Formulario: Actions → "QE Helper" → Run workflow
 name: QE Helper
 
-run-name: "Subtareas QE · ${{ inputs.issue_key }} · ${{ inputs.target }} · @${{ github.actor }}"
+run-name: "Subtareas QE · ${{ inputs.issue_key }} · @${{ github.actor }}"
 
 on:
   workflow_dispatch:
@@ -10,11 +10,6 @@ on:
         description: "Historia de usuario (ej. QA-100)"
         type: string
         required: true
-      target:
-        description: "mock = simulación en el runner · jira-cloud = instancia real"
-        type: choice
-        options: [mock, jira-cloud]
-        default: mock
       # Fases a crear (4 subtareas c/u, detalle en el README). Todas, algunas o ninguna.
       fase_planificacion:
         description: "Planificación (4 subtareas)"
@@ -47,37 +42,21 @@ jobs:
   subtasks:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: ${{ inputs.target }}   # cada destino tiene sus propios secrets
+    # Destino fijado por el admin en la variable de repositorio QE_TARGET (mock por defecto):
+    # el usuario no lo elige. Cada Environment tiene sus propios secrets.
+    environment: ${{ vars.QE_TARGET || 'mock' }}
     env:
       JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
       JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+      QE_ISSUE_KEY: ${{ inputs.issue_key }}   # vía env, nunca interpolado en el script
+      QE_FASE_1: ${{ inputs.fase_planificacion }}
+      QE_FASE_2: ${{ inputs.fase_diseno }}
+      QE_FASE_3: ${{ inputs.fase_preparacion }}
+      QE_FASE_4: ${{ inputs.fase_ejecucion }}
+      QE_FASE_5: ${{ inputs.fase_cierre }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
+      - uses: ./.github/actions/qe-subtareas
         with:
-          distribution: temurin
-          java-version: "21"
-          cache: maven
-
-      - name: Build
-        run: mvn -B -ntp -q package
-
-      - name: Levantar mock de Jira
-        if: inputs.target == 'mock'
-        run: |
-          MOCK_JIRA_EMAIL="$JIRA_EMAIL" MOCK_JIRA_TOKEN="$JIRA_API_TOKEN" \
-            nohup python3 mock/jira_mock.py > mock.log 2>&1 &
-          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8089/health && exit 0; sleep 0.5; done
-          cat mock.log; exit 1
-
-      - name: Crear subtareas QE
-        env:
-          JIRA_BASE_URL: ${{ inputs.target == 'mock' && 'http://127.0.0.1:8089' || vars.JIRA_BASE_URL }}
-          QE_ISSUE_KEY: ${{ inputs.issue_key }}   # vía env, nunca interpolado en el script
-          QE_FASE_1: ${{ inputs.fase_planificacion }}
-          QE_FASE_2: ${{ inputs.fase_diseno }}
-          QE_FASE_3: ${{ inputs.fase_preparacion }}
-          QE_FASE_4: ${{ inputs.fase_ejecucion }}
-          QE_FASE_5: ${{ inputs.fase_cierre }}
-        run: java -jar target/qe-helper.jar
+          target: ${{ vars.QE_TARGET || 'mock' }}

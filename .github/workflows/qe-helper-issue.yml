@@ -1,0 +1,56 @@
+# Opción "Issue Form": Issues → New issue → "Subtareas QE".
+# Crea las subtareas marcadas, responde con el resultado en el issue y lo cierra.
+name: QE Helper · issue
+
+on:
+  issues:
+    types: [opened]
+
+concurrency:
+  group: qe-helper-issue-${{ github.event.issue.number }}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  subtasks:
+    # Solo issues del formulario y de personas con acceso al repo: si el repo es público,
+    # cualquiera podría abrir un issue y disparar la creación en Jira.
+    if: >-
+      startsWith(github.event.issue.title, '[QE Helper]') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ vars.QE_TARGET || 'mock' }}
+    env:
+      JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+      QE_FORM_BODY: ${{ github.event.issue.body }}          # texto del usuario: solo vía env
+      QE_REQUESTED_BY: ${{ github.event.issue.user.login }}
+      QE_REQUEST_URL: ${{ github.event.issue.html_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: qe
+        uses: ./.github/actions/qe-subtareas
+        with:
+          target: ${{ vars.QE_TARGET || 'mock' }}
+          result-file: ${{ runner.temp }}/qe-result.md
+
+      - name: Responder en el issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          OUTCOME: ${{ steps.qe.outcome }}
+          RESULT: ${{ runner.temp }}/qe-result.md
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [[ -s "$RESULT" ]] || echo "> ❌ El proceso falló antes de generar el resultado." > "$RESULT"
+          echo "_[Ver ejecución]($RUN_URL)_" >> "$RESULT"
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$RESULT"
+          if [[ "$OUTCOME" == success ]]; then
+            gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --reason completed
+          fi

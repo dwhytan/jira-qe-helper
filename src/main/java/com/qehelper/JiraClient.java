@@ -44,6 +44,13 @@ final class JiraClient {
         return send("POST", "/rest/api/3/issue/bulk", body);
     }
 
+    /** Comentario en formato ADF (Atlassian Document Format), obligatorio en la API v3. */
+    void addComment(String issueKey, JsonNode adfDoc) {
+        var body = JSON.createObjectNode();
+        body.set("body", adfDoc);
+        send("POST", "/rest/api/3/issue/" + issueKey + "/comment", body);
+    }
+
     String browseUrl(String key) {
         return baseUrl + "/browse/" + key;
     }

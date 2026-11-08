@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Mock en memoria de los 3 endpoints de Jira Cloud que usa la v1 (solo stdlib).
+Mock en memoria de los endpoints de Jira Cloud que usa QE Helper (solo stdlib).
 Valida Basic auth contra MOCK_JIRA_EMAIL / MOCK_JIRA_TOKEN: así se comprueba que
 el pipeline inyectó los secretos, igual que haría Jira real (401 si no).
 
@@ -15,8 +15,9 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ISSUES = {
-    "QA-100": {"summary": "Login con biometría en app móvil", "subtasks": []},
-    "QA-101": {"summary": "Transferencias interbancarias inmediatas", "subtasks": []},
+    "QA-100": {"summary": "Login con biometría en app móvil", "subtasks": [], "comments": []},
+    "QA-101": {"summary": "Transferencias interbancarias inmediatas", "subtasks": [], "comments": []},
+    "QA-102": {"summary": "Pago de servicios con QR", "subtasks": [], "comments": []},
 }
 SUBTASK_TYPE = {"id": "10003", "name": "Subtarea", "subtask": True}
 NEXT = [200]
@@ -54,7 +55,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(404, {"errorMessages": ["Issue does not exist or you do not have permission to see it."]})
             return self.reply(200, {"key": m.group(1), "fields": {
                 "summary": issue["summary"], "project": {"key": m.group(1).split("-")[0]},
-                "subtasks": [{"key": k, "fields": {"summary": s}} for k, s in issue["subtasks"]]}})
+                "subtasks": [{"key": k, "fields": {"summary": s}} for k, s in issue["subtasks"]],
+                "comment": {"total": len(issue["comments"]), "comments": issue["comments"]}}})
         if re.match(r"^/rest/api/3/project/[A-Z0-9_]+$", path):
             return self.reply(200, {"issueTypes": [{"id": "10001", "name": "Historia", "subtask": False}, SUBTASK_TYPE]})
         self.reply(404, {"errorMessages": ["mock: ruta no soportada " + path]})
@@ -62,9 +64,18 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.authorized():
             return
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        m = re.match(r"^/rest/api/3/issue/([A-Z0-9_]+-\d+)/comment$", self.path)
+        if m:
+            issue = ISSUES.get(m.group(1))
+            if not issue:
+                return self.reply(404, {"errorMessages": ["Issue does not exist"]})
+            if body.get("body", {}).get("type") != "doc":
+                return self.reply(400, {"errorMessages": ["Comment body is not valid ADF"]})
+            issue["comments"].append({"id": str(len(issue["comments"]) + 1), "body": body["body"]})
+            return self.reply(201, issue["comments"][-1])
         if self.path != "/rest/api/3/issue/bulk":
             return self.reply(404, {"errorMessages": ["mock: ruta no soportada " + self.path]})
-        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         issues, errors = [], []
         for i, upd in enumerate(body.get("issueUpdates", [])):
             f = upd.get("fields", {})

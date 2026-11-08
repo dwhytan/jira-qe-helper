@@ -1,0 +1,71 @@
+# Opción "Issue Form": el usuario abre un issue con este formulario y
+# .github/workflows/qe-helper-issue.yml crea las subtareas y responde en el mismo issue.
+# Los textos de las casillas deben coincidir EXACTAMENTE con App.PHASES (lo valida el e2e).
+name: Subtareas QE
+description: Crear en Jira las subtareas QE de una historia de usuario
+title: "[QE Helper] Subtareas QE"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Marca solo las subtareas que aplican al alcance de la historia.
+        Al enviar, QE Helper las crea en Jira, comenta el resultado aquí y cierra el issue.
+        Si una subtarea ya existe en la historia, no se duplica.
+  - type: input
+    id: issue_key
+    attributes:
+      label: Historia de usuario
+      description: Clave de la historia en Jira
+      placeholder: QA-100
+    validations:
+      required: true
+  - type: checkboxes
+    id: planificacion
+    attributes:
+      label: Planificación
+      description: Entender la historia y planear las pruebas.
+      options:
+        - label: "(QE) Análisis de criterios de aceptación"
+        - label: "(QE) Elaboración de plan de pruebas"
+        - label: "(QE) Estimación de esfuerzo de pruebas"
+        - label: "(QE) Identificación de riesgos de calidad"
+  - type: checkboxes
+    id: diseno
+    attributes:
+      label: Diseño
+      description: Definir qué se va a probar y cómo.
+      options:
+        - label: "(QE) Diseño de casos de prueba funcionales"
+        - label: "(QE) Diseño de pruebas de performance"
+        - label: "(QE) Diseño de pruebas de seguridad"
+        - label: "(QE) Revisión de casos de prueba con el equipo"
+  - type: checkboxes
+    id: preparacion
+    attributes:
+      label: Preparación
+      description: Dejar listos datos, ambiente y automatización.
+      options:
+        - label: "(QE) Preparación de datos de prueba"
+        - label: "(QE) Configuración de ambiente de pruebas"
+        - label: "(QE) Automatización de casos de prueba"
+        - label: "(QE) Smoke test del despliegue en QA"
+  - type: checkboxes
+    id: ejecucion
+    attributes:
+      label: Ejecución
+      description: Correr las pruebas según el alcance de la historia.
+      options:
+        - label: "(QE) Ejecución de pruebas funcionales"
+        - label: "(QE) Ejecución de pruebas de regresión"
+        - label: "(QE) Ejecución de pruebas de performance"
+        - label: "(QE) Ejecución de pruebas de seguridad"
+  - type: checkboxes
+    id: cierre
+    attributes:
+      label: Cierre
+      description: Defectos, evidencias y salida a producción.
+      options:
+        - label: "(QE) Reporte y seguimiento de defectos"
+        - label: "(QE) Registro de evidencias"
+        - label: "(QE) Pruebas en producción (post-despliegue)"
+        - label: "(QE) Informe de cierre de pruebas"

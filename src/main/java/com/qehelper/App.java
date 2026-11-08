@@ -55,6 +55,11 @@ public final class App {
 
     private static final Pattern ISSUE_KEY = Pattern.compile("^[A-Z][A-Z0-9_]+-\\d+$");
 
+    /** Historia procesada (para el título del summary) y avisos no fatales. */
+    private static String parentKey = "";
+    private static final List<String> warnings = new ArrayList<>();
+    private static int notSelected = 0;
+
     public static void main(String[] args) {
         List<String> rows = new ArrayList<>();
         String error = null;
@@ -69,9 +74,14 @@ public final class App {
     }
 
     private static List<String> run() {
-        String parentKey = env("QE_ISSUE_KEY").toUpperCase();
+        // Origen de la solicitud: Issue Form (QE_FORM_BODY) o formulario del workflow (QE_ISSUE_KEY + casillas).
+        String formBody = env("QE_FORM_BODY");
+        IssueForm form = formBody.isEmpty() ? null : IssueForm.parse(formBody);
+        parentKey = (form != null ? form.issueKey() : env("QE_ISSUE_KEY")).toUpperCase();
         if (!ISSUE_KEY.matcher(parentKey).matches()) {
-            throw new IllegalArgumentException("issue_key inválido: '" + parentKey + "' (formato esperado: PROJ-123)");
+            String shown = parentKey.length() > 40 ? parentKey.substring(0, 40) + "…" : parentKey;
+            parentKey = "";
+            throw new IllegalArgumentException("issue_key inválido: '" + shown + "' (formato esperado: PROJ-123)");
         }
         List<Phase> phases = selectedPhases();
         List<String> rows = new ArrayList<>();
@@ -80,12 +90,14 @@ public final class App {
         for (Phase p : PHASES) {
             for (String summary : p.subtasks()) {
                 n++;
-                if (phases.contains(p) && flag("QE_SUBTASK_" + n)) selected.add(new Item(p.name(), summary));
-                else rows.add(row("➖ No seleccionada", p.name(), "", summary));
+                boolean chosen = phases.contains(p) && flag("QE_SUBTASK_" + n)
+                        && (form == null || form.checked().contains(summary));
+                if (chosen) selected.add(new Item(p.name(), summary));
+                else notSelected++;
             }
         }
         if (selected.isEmpty()) {
-            System.out.println("Ninguna fase seleccionada: no se llama a Jira.");
+            System.out.println("Ninguna subtarea seleccionada: no se llama a Jira.");
             return rows;
         }
 
@@ -132,14 +144,50 @@ public final class App {
             Item it = toCreate.get(i);
             rows.add(row("❌ Error", it.phase(), "", it.summary() + " — " + err.path("elementErrors").path("errors")));
         }
-        int created = 0;
+        List<String> createdLines = new ArrayList<>();
         for (int i = 0; i < toCreate.size(); i++) {
             if (failed.contains(i)) continue;
-            String key = res.path("issues").path(created++).path("key").asText();
+            String key = res.path("issues").path(createdLines.size()).path("key").asText();
             Item it = toCreate.get(i);
             rows.add(row("✅ Creada", it.phase(), "[" + key + "](" + jira.browseUrl(key) + ")", it.summary()));
+            createdLines.add(key + " · " + it.summary());
         }
+        if (!createdLines.isEmpty()) commentOnParent(jira, createdLines);
         return rows;
+    }
+
+    /**
+     * Deja constancia en la historia de quién pidió las subtareas (las crea la cuenta de servicio).
+     * Si falla no se revierte nada: las subtareas ya existen, solo se avisa en el summary.
+     */
+    private static void commentOnParent(JiraClient jira, List<String> createdLines) {
+        String requester = env("QE_REQUESTED_BY").isEmpty() ? env("GITHUB_ACTOR") : env("QE_REQUESTED_BY");
+        String source = env("QE_REQUEST_URL");
+        if (source.isEmpty() && !env("GITHUB_RUN_ID").isEmpty()) {
+            source = env("GITHUB_SERVER_URL") + "/" + env("GITHUB_REPOSITORY") + "/actions/runs/" + env("GITHUB_RUN_ID");
+        }
+        ObjectNode doc = JiraClient.JSON.createObjectNode().put("type", "doc").put("version", 1);
+        ArrayNode content = doc.putArray("content");
+        paragraph(content, "QE Helper creó " + createdLines.size() + " subtarea(s)"
+                + (requester.isEmpty() ? "" : " a pedido de " + requester) + ":", null);
+        ArrayNode items = content.addObject().put("type", "bulletList").putArray("content");
+        for (String line : createdLines) {
+            paragraph(items.addObject().put("type", "listItem").putArray("content"), line, null);
+        }
+        if (!source.isEmpty()) paragraph(content, "Ver solicitud en GitHub", source);
+        try {
+            jira.addComment(parentKey, doc);
+            System.out.println("Comentario agregado en " + parentKey);
+        } catch (RuntimeException e) {
+            warnings.add("No se pudo comentar en " + parentKey + ": " + e.getMessage());
+            System.err.println("AVISO: " + warnings.get(warnings.size() - 1));
+        }
+    }
+
+    private static void paragraph(ArrayNode parent, String text, String link) {
+        ObjectNode t = parent.addObject().put("type", "paragraph").putArray("content").addObject()
+                .put("type", "text").put("text", text);
+        if (link != null) t.putArray("marks").addObject().put("type", "link").putObject("attrs").put("href", link);
     }
 
     /**
@@ -170,20 +218,31 @@ public final class App {
         return r;
     }
 
-    /** Resultado visible en la pestaña Summary del run de GitHub Actions. */
+    /**
+     * Resultado en markdown: pestaña Summary del run (GITHUB_STEP_SUMMARY) y, si se pide,
+     * QE_RESULT_FILE para publicarlo como comentario en el issue de GitHub.
+     */
     private static void writeSummary(List<String> rows, String error) {
-        String file = env("GITHUB_STEP_SUMMARY");
-        if (file.isEmpty()) return;
-        StringBuilder md = new StringBuilder("## Subtareas QE · " + env("QE_ISSUE_KEY").toUpperCase() + "\n\n");
+        StringBuilder md = new StringBuilder("## Subtareas QE" + (parentKey.isEmpty() ? "" : " · " + parentKey) + "\n\n");
         if (error != null) md.append("> ❌ ").append(error).append("\n\n");
+        warnings.forEach(w -> md.append("> ⚠️ ").append(w).append("\n\n"));
+        if (error == null && notSelected > 0) {
+            md.append(notSelected == PHASES.stream().mapToInt(p -> p.subtasks().size()).sum()
+                    ? "Ninguna subtarea seleccionada: no se creó nada.\n\n"
+                    : "➖ " + notSelected + " subtareas no seleccionadas.\n\n");
+        }
         if (!rows.isEmpty()) {
             md.append("| Estado | Fase | Issue | Resumen |\n|---|---|---|---|\n");
             rows.forEach(r -> md.append(r).append('\n'));
         }
-        try {
-            Files.writeString(Path.of(file), md.append('\n'), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (IOException e) {
-            System.err.println("No se pudo escribir el summary: " + e.getMessage());
+        md.append('\n');
+        for (String file : List.of(env("GITHUB_STEP_SUMMARY"), env("QE_RESULT_FILE"))) {
+            if (file.isEmpty()) continue;
+            try {
+                Files.writeString(Path.of(file), md, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            } catch (IOException e) {
+                System.err.println("No se pudo escribir " + file + ": " + e.getMessage());
+            }
         }
     }
 

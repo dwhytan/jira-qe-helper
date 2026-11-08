@@ -2,7 +2,7 @@
 # Formulario: Actions → "QE Helper · subtareas" → Run workflow
 name: QE Helper · subtareas
 
-run-name: "Subtareas QE · ${{ inputs.issue_key }} · ${{ inputs.target }} · @${{ github.actor }}"
+run-name: "Subtareas QE · ${{ inputs.issue_key }} · @${{ github.actor }}"
 
 on:
   workflow_dispatch:
@@ -11,11 +11,6 @@ on:
         description: "Historia de usuario (ej. QA-100)"
         type: string
         required: true
-      target:
-        description: "mock = simulación en el runner · jira-cloud = instancia real"
-        type: choice
-        options: [mock, jira-cloud]
-        default: mock
       # Una casilla por subtarea (texto completo en App.PHASES). Máximo de GitHub: 25 inputs.
       st_01:
         description: "Plan · Criterios de aceptación"
@@ -108,52 +103,36 @@ jobs:
   subtasks:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: ${{ inputs.target }}   # cada destino tiene sus propios secrets
+    # Destino fijado por el admin en la variable de repositorio QE_TARGET (mock por defecto):
+    # el usuario no lo elige. Cada Environment tiene sus propios secrets.
+    environment: ${{ vars.QE_TARGET || 'mock' }}
     env:
       JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
       JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+      QE_ISSUE_KEY: ${{ inputs.issue_key }}   # vía env, nunca interpolado en el script
+      QE_SUBTASK_1: ${{ inputs.st_01 }}
+      QE_SUBTASK_2: ${{ inputs.st_02 }}
+      QE_SUBTASK_3: ${{ inputs.st_03 }}
+      QE_SUBTASK_4: ${{ inputs.st_04 }}
+      QE_SUBTASK_5: ${{ inputs.st_05 }}
+      QE_SUBTASK_6: ${{ inputs.st_06 }}
+      QE_SUBTASK_7: ${{ inputs.st_07 }}
+      QE_SUBTASK_8: ${{ inputs.st_08 }}
+      QE_SUBTASK_9: ${{ inputs.st_09 }}
+      QE_SUBTASK_10: ${{ inputs.st_10 }}
+      QE_SUBTASK_11: ${{ inputs.st_11 }}
+      QE_SUBTASK_12: ${{ inputs.st_12 }}
+      QE_SUBTASK_13: ${{ inputs.st_13 }}
+      QE_SUBTASK_14: ${{ inputs.st_14 }}
+      QE_SUBTASK_15: ${{ inputs.st_15 }}
+      QE_SUBTASK_16: ${{ inputs.st_16 }}
+      QE_SUBTASK_17: ${{ inputs.st_17 }}
+      QE_SUBTASK_18: ${{ inputs.st_18 }}
+      QE_SUBTASK_19: ${{ inputs.st_19 }}
+      QE_SUBTASK_20: ${{ inputs.st_20 }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
+      - uses: ./.github/actions/qe-subtareas
         with:
-          distribution: temurin
-          java-version: "21"
-          cache: maven
-
-      - name: Build
-        run: mvn -B -ntp -q package
-
-      - name: Levantar mock de Jira
-        if: inputs.target == 'mock'
-        run: |
-          MOCK_JIRA_EMAIL="$JIRA_EMAIL" MOCK_JIRA_TOKEN="$JIRA_API_TOKEN" \
-            nohup python3 mock/jira_mock.py > mock.log 2>&1 &
-          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8089/health && exit 0; sleep 0.5; done
-          cat mock.log; exit 1
-
-      - name: Crear subtareas QE
-        env:
-          JIRA_BASE_URL: ${{ inputs.target == 'mock' && 'http://127.0.0.1:8089' || vars.JIRA_BASE_URL }}
-          QE_ISSUE_KEY: ${{ inputs.issue_key }}   # vía env, nunca interpolado en el script
-          QE_SUBTASK_1: ${{ inputs.st_01 }}
-          QE_SUBTASK_2: ${{ inputs.st_02 }}
-          QE_SUBTASK_3: ${{ inputs.st_03 }}
-          QE_SUBTASK_4: ${{ inputs.st_04 }}
-          QE_SUBTASK_5: ${{ inputs.st_05 }}
-          QE_SUBTASK_6: ${{ inputs.st_06 }}
-          QE_SUBTASK_7: ${{ inputs.st_07 }}
-          QE_SUBTASK_8: ${{ inputs.st_08 }}
-          QE_SUBTASK_9: ${{ inputs.st_09 }}
-          QE_SUBTASK_10: ${{ inputs.st_10 }}
-          QE_SUBTASK_11: ${{ inputs.st_11 }}
-          QE_SUBTASK_12: ${{ inputs.st_12 }}
-          QE_SUBTASK_13: ${{ inputs.st_13 }}
-          QE_SUBTASK_14: ${{ inputs.st_14 }}
-          QE_SUBTASK_15: ${{ inputs.st_15 }}
-          QE_SUBTASK_16: ${{ inputs.st_16 }}
-          QE_SUBTASK_17: ${{ inputs.st_17 }}
-          QE_SUBTASK_18: ${{ inputs.st_18 }}
-          QE_SUBTASK_19: ${{ inputs.st_19 }}
-          QE_SUBTASK_20: ${{ inputs.st_20 }}
-        run: java -jar target/qe-helper.jar
+          target: ${{ vars.QE_TARGET || 'mock' }}

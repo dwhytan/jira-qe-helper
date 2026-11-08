@@ -19,24 +19,39 @@ por defecto). Cada fase crea sus 4 subtareas; puedes marcar todas, algunas o nin
 
 El catálogo vive en `App.PHASES`.
 
-**Opción A (ejemplo para comparar):** el workflow *QE Helper · subtareas*
-(`qe-helper-subtareas.yml`) muestra una casilla por cada una de las 20 subtareas, con texto
-corto. Usa 22 de los 25 inputs que permite GitHub.
+### Tres formas de pedirlo (para comparar)
+
+| Entrada | Dónde | Selección |
+|---|---|---|
+| **QE Helper** (`qe-helper.yml`) | Actions → Run workflow | 5 casillas, una por fase |
+| **QE Helper · subtareas** (`qe-helper-subtareas.yml`) | Actions → Run workflow | 20 casillas con texto corto (22 de 25 inputs) |
+| **Issue Form** (`ISSUE_TEMPLATE/qe-subtareas.yml` + `qe-helper-issue.yml`) | Issues → New issue → *Subtareas QE* | 20 casillas agrupadas por fase, con ayuda; desmarcadas por defecto |
+
+Con el Issue Form, el resultado se publica como comentario en el mismo issue y este se cierra.
+Solo lo procesan issues de personas con acceso al repo (`OWNER`, `MEMBER`, `COLLABORATOR`).
 
 - Una sola llamada `POST /rest/api/3/issue/bulk`.
 - **No duplica**: si una subtarea ya existe en la historia, la omite.
 - El tipo subtarea se detecta del proyecto, sin importar su nombre (`Subtask`, `Subtarea`…).
-- Las fases no marcadas aparecen como "➖ No seleccionada"; si no marcas ninguna, no se llama a Jira.
+- Las no marcadas se resumen en una línea ("➖ N subtareas no seleccionadas"); si no marcas ninguna, no se llama a Jira.
 - El resultado aparece en la pestaña **Summary** del run.
+- Si crea algo, comenta en la historia de Jira qué creó, quién lo pidió y el enlace a la solicitud
+  (las subtareas las crea la cuenta de servicio, así queda la trazabilidad).
+- El usuario no elige el destino: lo fija la variable de repositorio `QE_TARGET`
+  (`mock` por defecto, `jira-cloud` para la instancia real).
 
 ## Estructura
 
 ```
 src/main/java/com/qehelper/App.java         flujo principal
 src/main/java/com/qehelper/JiraClient.java  cliente REST de Jira
+src/main/java/com/qehelper/IssueForm.java   lee el cuerpo del Issue Form
 mock/jira_mock.py                           Jira simulado para probar sin instancia real
 .github/workflows/qe-helper.yml             formulario por fase (workflow_dispatch)
 .github/workflows/qe-helper-subtareas.yml   formulario por subtarea (opción A)
+.github/workflows/qe-helper-issue.yml       procesa el Issue Form y responde en el issue
+.github/ISSUE_TEMPLATE/qe-subtareas.yml     Issue Form
+.github/actions/qe-subtareas/action.yml     pasos comunes (build, mock, ejecución)
 .github/workflows/ci.yml                    e2e contra el mock en cada push
 scripts/run-local.sh                        corre el workflow en local
 scripts/e2e-mock.sh                         pruebas e2e
@@ -55,7 +70,8 @@ La app solo lee variables de entorno: en la corporación esos valores vendrían 
 ## Uso
 
 **En GitHub:** Settings → Environments → `mock` → agrega los 2 secrets (valores inventados).
-Luego Actions → QE Helper → Run workflow → `issue_key = QA-100`.
+Luego Actions → QE Helper → Run workflow → `issue_key = QA-100`, o Issues → New issue → *Subtareas QE*.
+Para apuntar a Jira real: Settings → Variables → `QE_TARGET = jira-cloud`.
 
 **En local** (JDK 21, Maven, Python 3):
 
@@ -63,7 +79,7 @@ Luego Actions → QE Helper → Run workflow → `issue_key = QA-100`.
 cp .secrets.example .secrets
 ./scripts/run-local.sh QA-100              # contra el mock
 QE_FASE_2=false ./scripts/run-local.sh QA-100      # desmarca la fase Diseño
-./scripts/e2e-mock.sh                      # 11 escenarios
+./scripts/e2e-mock.sh                      # 16 escenarios
 ```
 
 Para un Jira Cloud real: pon el token en `.secrets`, crea `.vars` con `JIRA_BASE_URL` y usa `--jira-cloud`.

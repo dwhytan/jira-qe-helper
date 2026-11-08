@@ -1,0 +1,43 @@
+# Pasos comunes a los 3 formularios: build, mock (si aplica) y creación de subtareas.
+# Las credenciales y la selección (QE_ISSUE_KEY, QE_FASE_n, QE_SUBTASK_n, QE_FORM_BODY...)
+# llegan como variables de entorno del job que lo llama.
+name: Crear subtareas QE
+description: Compila QE Helper y crea las subtareas en Jira (o en el mock)
+inputs:
+  target:
+    description: "mock o jira-cloud"
+    required: true
+  result-file:
+    description: "Archivo donde dejar también el resultado en markdown (opcional)"
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "21"
+        cache: maven
+
+    - name: Build
+      shell: bash
+      run: mvn -B -ntp -q package
+
+    - name: Levantar mock de Jira
+      if: inputs.target == 'mock'
+      shell: bash
+      run: |
+        MOCK_JIRA_EMAIL="$JIRA_EMAIL" MOCK_JIRA_TOKEN="$JIRA_API_TOKEN" \
+          nohup python3 mock/jira_mock.py > mock.log 2>&1 &
+        for i in $(seq 1 30); do curl -sf http://127.0.0.1:8089/health && exit 0; sleep 0.5; done
+        cat mock.log; exit 1
+
+    - name: Crear subtareas QE
+      shell: bash
+      env:
+        QE_TARGET: ${{ inputs.target }}
+        QE_RESULT_FILE: ${{ inputs.result-file }}
+      run: |
+        if [[ "$QE_TARGET" == mock ]]; then export JIRA_BASE_URL=http://127.0.0.1:8089; fi
+        java -jar target/qe-helper.jar
