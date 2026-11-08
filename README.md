@@ -31,6 +31,7 @@ mock/jira_mock.py                           Jira simulado para probar sin instan
 .github/workflows/ci.yml                    e2e contra el mock en cada push
 scripts/run-local.sh                        corre el workflow en local
 scripts/e2e-mock.sh                         pruebas e2e
+.run/                                       configuraciones de IntelliJ (Mock Jira, QE Helper, E2E)
 ```
 
 El build (`mvn package`) genera `target/qe-helper.jar` con Jackson incluido, y el workflow

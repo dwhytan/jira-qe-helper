@@ -1,0 +1,19 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Mock Jira" type="ShConfigurationType">
+    <!-- Valores ficticios: deben coincidir con los de "QE Helper (mock)".
+         Van en línea porque IntelliJ no pasa <envs> al ejecutar un comando (SCRIPT_TEXT). -->
+    <option name="SCRIPT_TEXT" value="MOCK_JIRA_EMAIL=svc-qe@example.com MOCK_JIRA_TOKEN=mock-jira-token python3 mock/jira_mock.py --port 8089" />
+    <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+    <option name="SCRIPT_PATH" value="" />
+    <option name="SCRIPT_OPTIONS" value="" />
+    <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+    <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
+    <option name="INTERPRETER_PATH" value="/bin/bash" />
+    <option name="INTERPRETER_OPTIONS" value="" />
+    <option name="EXECUTE_IN_TERMINAL" value="false" />
+    <option name="EXECUTE_SCRIPT_FILE" value="false" />
+    <envs />
+    <method v="2" />
+  </configuration>
+</component>

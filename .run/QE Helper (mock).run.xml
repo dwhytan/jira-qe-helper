@@ -1,0 +1,16 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="QE Helper (mock)" type="Application" factoryName="Application">
+    <envs>
+      <env name="JIRA_BASE_URL" value="http://127.0.0.1:8089" />
+      <env name="JIRA_EMAIL" value="svc-qe@example.com" />
+      <env name="JIRA_API_TOKEN" value="mock-jira-token" />
+      <env name="QE_ISSUE_KEY" value="QA-100" />
+    </envs>
+    <option name="MAIN_CLASS_NAME" value="com.qehelper.App" />
+    <module name="jira-qe-helper" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
